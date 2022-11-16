@@ -1,0 +1,92 @@
+#
+# Parses the image and timestamp from imgcache files found in com.android.gallery3d folders
+# The exact meaning of the timestamp is not yet understood.
+#
+
+
+import re   
+import os 
+import struct
+from datetime import datetime
+import time
+
+
+def main ():
+	img_count = 0
+	vid_count = 0
+	total = 0
+	out_dir = ""
+
+	input_file = input("[+] Drag & drop a imgcache file into this window and hit enter.\n[+] => ").replace("\"", "")
+
+	start = time.process_time()
+
+	if "imgcache" in input_file:
+		print ("[+] %s opened!" % input_file)
+
+
+		with open (input_file, 'rb') as file:
+			data = file.read()
+			
+			regex = b'\x00\x6C\x00\x6F\x00\x63\x00\x61\x00\x6C' #Finds both image and video headers
+			matches = [match.start() for match in re.finditer(re.escape(regex), data)]
+
+			i = 0
+			while i < len(matches)-1:
+
+				chunk_start = matches[i]
+				chunk_end = matches[i+1]
+				chunk_size = (chunk_end - chunk_start)
+
+				file.seek(chunk_start)
+
+				chunk = file.read(chunk_size)
+
+
+				jpg_start = re.search(b'\xFF\xD8\xFF\xE0', chunk).start()
+				file_type_img = re.search(b'\x00\x69\x00\x6D\x00\x61\x00\x67\x00\x65', chunk)
+				file_type_vid = re.search(b'\x00\x76\x00\x69\x00\x64\x00\x65\x00\x6F', chunk)
+
+				#Timestamp is in front of the JPG header.
+				file.seek((chunk_start + jpg_start) - 20)
+				timestamp = file.read(20).decode('utf-16-le')
+
+				if file_type_img:
+					file_type = "image_"
+					img_count+=1
+				if file_type_vid:
+					file_type = "video_"
+					vid_count+=1
+
+				out_dir = os.path.join(os.path.dirname(input_file), "output")
+
+				try:
+					os.makedirs(out_dir)
+				except:
+					pass #Dir already exists
+
+				out_filename = os.path.basename(input_file) + "_" + file_type + datetime.utcfromtimestamp(int(timestamp)).strftime("%Y-%m-%d_%H-%M-%S")+".jpg"
+
+				with open (os.path.join(out_dir, out_filename), 'wb') as output:
+
+					file_size = (chunk_end - (chunk_start-jpg_start))
+
+					file.seek(chunk_start + jpg_start)
+
+					output.write(file.read(file_size))
+					total+=1
+				i+=1
+
+		print ("[+] Operation Complete! %s embedded images extracted. %s from images, %s from videos" % (total, img_count, vid_count))
+		print ("[+] Operating took %.2f seconds to finish." % (time.process_time() - start))
+		print ("[+] Results stored to %s" % out_dir)
+		input("[+] Hit Enter to close.").replace("\"", "")
+
+	else:
+		print ("[!] Input file is not a imgcache file")
+		input("[+] Hit Enter to close.").replace("\"", "")
+
+
+
+if __name__ == '__main__':
+    main()
